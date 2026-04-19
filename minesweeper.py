@@ -19,7 +19,10 @@ class Board():
         while mines_placed < self.num:
             r = random.randint(0, self.rows - 1)
             c = random.randint(0, self.cols - 1)
-        
+
+            if abs(r - first_row) <= 1 and abs(c - first_col) <= 1:
+                continue
+            
             if r == first_row and c == first_col:
                 continue
 
@@ -48,3 +51,23 @@ class Board():
                             count += 1
                 
                 self.grid[r][c].neighbors = count
+
+    def reveal(self, r, c):
+        if r < 0 or r >= self.rows or c < 0 or c >= self.cols:
+            return
+        
+        cell = self.grid[r][c]
+
+        if cell.isRevealed or cell.isFlagged:
+            return
+        
+        cell.isRevealed = True
+
+        if cell.isMine:
+            print("You lose")
+            return
+        
+        if cell.neighbors == 0:
+            direction = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, 0), (1, 1), (1, -1), (-1, 1)]
+            for dr, dc in direction:
+                self.reveal(r + dr, c + dc)
