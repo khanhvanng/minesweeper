@@ -1,4 +1,8 @@
 import random
+import pygame
+import sys
+
+direction = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, 0), (1, 1), (1, -1), (-1, 1)]
 
 class Cell():
     def __init__(self):
@@ -6,7 +10,7 @@ class Cell():
         self.isRevealed = False
         self.isFlagged = False
         self.neighbors = 0
-    
+
 class Board():
     def __init__(self, rows, cols,num):
         self.rows = rows
@@ -22,7 +26,7 @@ class Board():
 
             if abs(r - first_row) <= 1 and abs(c - first_col) <= 1:
                 continue
-            
+
             if r == first_row and c == first_col:
                 continue
 
@@ -34,9 +38,7 @@ class Board():
 
         self.calculate_neighbors()
 
-    def calculate_neighbors(self):
-        direction = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, 0), (1, 1), (1, -1), (-1, 1)]
-        
+    def calculate_neighbors(self):      
         for r in range(self.rows):
             for c in range(self.cols):
                 if self.grid[r][c].isMine:
@@ -68,6 +70,6 @@ class Board():
             return
         
         if cell.neighbors == 0:
-            direction = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, 0), (1, 1), (1, -1), (-1, 1)]
             for dr, dc in direction:
                 self.reveal(r + dr, c + dc)
+
