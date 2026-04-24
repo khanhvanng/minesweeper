@@ -5,6 +5,15 @@ import sys
 direction = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, 0), (1, 1), (1, -1), (-1, 1)]
 
 class Cell():
+    '''
+    Lớp đại diện cho một ô vuông trên bảng Dò Mìn.
+    
+    Attributes:
+        isMine (bool): Trạng thái ô có chứa mìn hay không (True = có mìn).
+        isOpen (bool): Trạng thái ô đã được người chơi mở hay chưa.
+        isFlagged (bool): Trạng thái ô đã bị cắm cờ nghi ngờ có mìn.
+        neighbors (int): Số lượng mìn hiện diện trong 8 ô lân cận (từ 0 đến 8).
+    '''
     def __init__(self):
         self.isMine = False
         self.isRevealed = False
@@ -12,7 +21,15 @@ class Cell():
         self.neighbors = 0
 
 class Board():
-    def __init__(self, rows, cols,num):
+    '''
+    Lớp đại diện cho bảng Dò mìn.
+
+    Attributes:
+        rows (int): Số hàng trong bảng chơi.
+        cols (int): Số cột trong bảng chơi.
+        num (int): Số lượng mìn được rải vào bảng chơi.
+    '''
+    def __init__(self, rows, cols, num):
         self.rows = rows
         self.cols = cols
         self.num = num
