@@ -223,6 +223,112 @@ class Board():
                 if self.grid[r][c].isMine:
                     self.grid[r][c].isRevealed = True
 
+class Constraint():
+    def __init__(self, cells, mines):
+        self.cells = set(cells)
+        self.mines = mines
+
+    def __eq__(self, other):
+        return self.cells == other.cells and self.mines == other.mines
+
+    def __hash__(self):
+        return hash((frozenset(self.cells), self.mines))
+
+    def is_empty(self):
+        return len(self.cells) == 0
+    
+class MinesweeperAI():
+    def __init__(self, rows, cols):
+        self.rows = rows
+        self.cols = cols
+    
+        self.knowledge = []
+        self.safe = set()
+        self.mines = set()
+        self.processed = set()
+    
+    def add_knowledge(self, cell, number, board):
+        r, c = cell
+
+        self.safe.add(cell)
+
+        unknown = set()
+        remaining_mines = number
+
+        for dr, dc in direction:
+            nr, nc = r + dr, c + dc
+
+            if 0 <= nr < self.rows and 0 <= nc < self.cols:
+                neighbor = board.grid[nr][nc]
+                
+                if (nr, nc) in self.mines:
+                    remaining_mines -= 1
+                elif not neighbor.isRevealed:
+                    unknown.add((nr, nc))
+        
+        if len(unknown) > 0:
+            new_constraint = Constraint(unknown, remaining_mines)
+
+            if new_constraint not in self.knowledge:
+                self.knowledge.append(new_constraint)
+        
+        self.infer()
+    
+    def infer(self):
+        changed = True
+        while changed:
+            changed = False
+        
+            new_knowledge = []
+
+            for c in self.knowledge:
+                if c.mines == 0:
+                    for cell in c.cells:
+                        if cell not in self.safe:
+                            self.safe.add(cell)
+                            changed = True
+                
+                elif c.mines == len(c.cells):
+                    for cell in c.cells:
+                        if cell not in self.mines:
+                            self.mines.add(cell)
+                            changed = True
+
+            for c in self.knowledge:
+                new_cells = set()
+                mines = c.mines
+
+                for cell in c.cells:
+                    if cell in self.mines:
+                        mines -= 1
+                    elif cell not in self.safe:
+                        new_cells.add(cell)
+                
+                if len(new_cells) > 0 and 0 <= mines <= len(new_cells):
+                    new_knowledge.append(Constraint(new_cells, mines))
+            
+            self.knowledge.extend(new_knowledge)
+            self.knowledge = list(set(self.knowledge))
+
+            new_constraints = []
+
+            for c1 in self.knowledge:
+                for c2 in self.knowledge:
+                    if c1 == c2: continue
+                    if c1.cells.issubset(c2.cells) and c1.mines <= c2.mines:
+                        diff_cells = c2.cells - c1.cells
+                        diff_mines = c2.mines - c1.mines
+                        new_constraint = Constraint(diff_cells, diff_mines)
+
+                        if (not new_constraint.is_empty() 
+                            and new_constraint not in self.knowledge 
+                            and new_constraint not in new_constraints):
+                            new_constraints.append(new_constraint)
+                            changed = True
+
+            self.knowledge.extend(new_constraints)
+
+            self.knowledge = [c for c in self.knowledge if not c.is_empty()]
 
 class CellUI(Button):
     '''
