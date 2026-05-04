@@ -330,6 +330,25 @@ class MinesweeperAI():
 
             self.knowledge = [c for c in self.knowledge if not c.is_empty()]
 
+    def get_hint(self, board):
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if board.grid[r][c].isFlagged and (r, c) in self.safe:
+                    return ("wrong_flag", (r, c))
+        
+        for cell in self.safe:
+            r, c = cell
+            if not board.grid[r][c].isRevealed:
+                return ("safe", (r, c))
+            
+        for cell in self.mines:
+            r, c = cell
+            if not board.grid[r][c].isFlagged:
+                return ("mine", (r, c))
+        
+        return ("none", None)
+
+
 class CellUI(Button):
     '''
     Lớp giao diện đại diện cho một nút bấm (ô) trên màn hình.
@@ -424,6 +443,8 @@ class MinesweeperApp(App):
         self.is_first_click = True
         self.ui_grid = []
 
+        self.ai = MinesweeperAI(self.game_rows, self.game_cols)
+        
         main_layout = BoxLayout(orientation='vertical')
 
         self.lives_label = Label(
@@ -482,6 +503,10 @@ class MinesweeperApp(App):
 
         self.game_board.reveal(r, c)
         
+        cell = self.game_board.grid[r][c]
+        if not cell.isMine:
+            self.ai.add_knowledge((r, c), cell.neighbors, self.game_board)
+
         self.game_board.check_win() 
         
         self.sync_ui_with_logic()
