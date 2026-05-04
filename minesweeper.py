@@ -154,6 +154,41 @@ class Board():
             for dr, dc in direction:
                 self.reveal(r + dr, c + dc)
 
+    def reveal_safe_around(self, r, c):
+        '''
+        Hàm tự động lật mở tất cả các ô lân cận, nếu số cờ xung quanh
+        hay số mìn đã mở bằng đúng neighbors của ô hiện tại.
+
+        Args:
+            r (int): Tọa độ hàng của ô được chọn.
+            c (int): Tọa độ cột của ô được chọn. 
+        '''
+        if self.game_over:
+            return
+            
+        cell = self.grid[r][c]
+        
+        if not cell.isRevealed or cell.neighbors == 0:
+            return
+
+        opened_mines = 0
+        flag_count = 0
+        for dr, dc in direction:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < self.rows and 0 <= nc < self.cols:
+                if self.grid[nr][nc].isFlagged:
+                    flag_count += 1
+                elif self.grid[nr][nc].isMine and self.grid[nr][nc].isRevealed:
+                    opened_mines += 1
+
+        if (flag_count == cell.neighbors) or (flag_count + opened_mines == cell.neighbors):
+            for dr, dc in direction:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.rows and 0 <= nc < self.cols:
+                    neighbor_cell = self.grid[nr][nc]
+                    if not neighbor_cell.isRevealed and not neighbor_cell.isFlagged:
+                        self.reveal(nr, nc)
+
     def check_win(self):
         '''
         Kiểm tra điều kiện chiến thắng của trò chơi.
@@ -232,10 +267,14 @@ class CellUI(Button):
         Xử lý sự kiện khi người chơi click chuột trái.
         Gửi yêu cầu mở ô về cho ứng dụng gốc nếu ô chưa bị cắm cờ.
         '''
-        if self.logic_cell.isRevealed or self.logic_cell.isFlagged:
+        if self.logic_cell.isFlagged:
             return
-        
-        self.app_ref.handle_click(self.r, self.c)
+            
+        if not self.logic_cell.isRevealed:
+            self.app_ref.handle_click(self.r, self.c)
+            
+        elif self.logic_cell.neighbors > 0:
+            self.app_ref.handle_chord(self.r, self.c)
 
     def update_display(self):
         '''
@@ -310,6 +349,15 @@ class MinesweeperApp(App):
         
         return main_layout
 
+    def handle_chord(self, r, c):
+        if self.game_board.game_over:
+            return
+            
+        self.game_board.reveal_safe_around(r, c)
+        
+        self.game_board.check_win() 
+        self.sync_ui_with_logic()
+    
     def handle_click(self, r, c):
         '''
         Hàm trung gian nhận yêu cầu click từ CellUI và ra lệnh cho Board xử lý.
