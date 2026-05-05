@@ -203,7 +203,7 @@ class Board():
         revealed_count = 0
         for r in range(self.rows):
             for c in range(self.cols):
-                if self.grid[r][c].isRevealed:
+                if self.grid[r][c].isRevealed and not self.grid[r][c].isMine:
                     revealed_count += 1
         
         target = self.rows * self.cols - self.num
@@ -263,6 +263,7 @@ class MinesweeperAI():
                 
                 if (nr, nc) in self.mines:
                     remaining_mines -= 1
+                    
                 elif not neighbor.isRevealed:
                     unknown.add((nr, nc))
         
@@ -330,6 +331,10 @@ class MinesweeperAI():
 
             self.knowledge = [c for c in self.knowledge if not c.is_empty()]
 
+            if not changed:
+                if self.brute_force():
+                    changed = True
+                
     def get_hint(self, board):
         for r in range(self.rows):
             for c in range(self.cols):
@@ -343,12 +348,82 @@ class MinesweeperAI():
             
         for cell in self.mines:
             r, c = cell
-            if not board.grid[r][c].isFlagged:
+            if not board.grid[r][c].isFlagged and not board.grid[r][c].isRevealed:
                 return ("mine", (r, c))
         
         return ("none", None)
 
-
+    def brute_force(self):
+        '''
+        Thuật toán Vét cạn (Backtracking/Tank Solver).
+        Gom các constraint giao nhau thành cụm, sinh các trường hợp đặt mìn,
+        và lọc ra những ô luôn luôn là mìn hoặc luôn luôn an toàn.
+        '''
+        changed = False
+        
+        components = []
+        unassigned = self.knowledge.copy()
+        
+        while unassigned:
+            c = unassigned.pop(0)
+            comp_cells = set(c.cells)
+            comp_constraints = [c]
+            
+            added = True
+            while added:
+                added = False
+                for other_c in unassigned[:]:
+                    if comp_cells.intersection(other_c.cells):
+                        comp_cells.update(other_c.cells)
+                        comp_constraints.append(other_c)
+                        unassigned.remove(other_c)
+                        added = True
+                        
+            components.append((list(comp_cells), comp_constraints))
+            
+        for comp_cells, comp_constraints in components:
+            if len(comp_cells) > 15:
+                continue
+                
+            valid_assignments = []
+            
+            def backtrack(index, current_assignment):
+                if index == len(comp_cells):
+                    valid = True
+                    for const in comp_constraints:
+                        mines_in_const = sum(1 for i, cell in enumerate(comp_cells) 
+                                             if cell in const.cells and current_assignment[i])
+                        if mines_in_const != const.mines:
+                            valid = False
+                            break
+                    
+                    if valid:
+                        valid_assignments.append(current_assignment.copy())
+                    return
+                
+                current_assignment[index] = True
+                backtrack(index + 1, current_assignment)
+                
+                current_assignment[index] = False
+                backtrack(index + 1, current_assignment)
+                
+            backtrack(0, [False] * len(comp_cells))
+            
+            if valid_assignments:
+                for i, cell in enumerate(comp_cells):
+                    is_always_mine = all(assign[i] == True for assign in valid_assignments)
+                    
+                    is_always_safe = all(assign[i] == False for assign in valid_assignments)
+                    
+                    if is_always_mine and cell not in self.mines:
+                        self.mines.add(cell)
+                        changed = True
+                    if is_always_safe and cell not in self.safe:
+                        self.safe.add(cell)
+                        changed = True
+                        
+        return changed
+    
 class CellUI(Button):
     '''
     Lớp giao diện đại diện cho một nút bấm (ô) trên màn hình.
@@ -439,23 +514,41 @@ class MinesweeperApp(App):
         self.num_mines = 10
 
         self.game_board = Board(self.game_rows, self.game_cols, self.num_mines, lives=3)
-        
         self.is_first_click = True
         self.ui_grid = []
-
         self.ai = MinesweeperAI(self.game_rows, self.game_cols)
         
-        main_layout = BoxLayout(orientation='vertical')
+        main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
+        top_bar = BoxLayout(orientation='horizontal', size_hint=(1, 0.1), spacing=15)
+        
         self.lives_label = Label(
-            text=f"Mạng sống: {'❤️' * self.game_board.lives}", 
-            font_size=30,
-            bold=True,
-            size_hint=(1, 0.1)
+            text=f"Mạng sống: {self.game_board.lives}", 
+            font_size=24,
+            bold=True
         )
-        main_layout.add_widget(self.lives_label)
+        top_bar.add_widget(self.lives_label)
 
-        root = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(1, 0.9))
+        hint_btn = Button(
+            text="Gợi ý",
+            font_size=20, 
+            bold=True, 
+            size_hint=(0.4, 1) 
+        )
+        hint_btn.bind(on_release=self.give_hint)
+        top_bar.add_widget(hint_btn)
+        
+        main_layout.add_widget(top_bar)
+
+        self.hint_message = Label(
+            text="Trò chơi bắt đầu! AI đang theo dõi...", 
+            font_size=18, 
+            color=[1, 1, 0, 1], 
+            size_hint=(1, 0.05)
+        )
+        main_layout.add_widget(self.hint_message)
+
+        root = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(1, 0.85))
         self.board_layout = GridLayout(cols=self.game_cols, rows=self.game_rows, size_hint=(None, None))
         
         self.update_board_size()
@@ -471,10 +564,54 @@ class MinesweeperApp(App):
             self.ui_grid.append(ui_row)
             
         root.add_widget(self.board_layout)
-
         main_layout.add_widget(root) 
         
         return main_layout
+
+    def give_hint(self, instance):
+        if self.game_board.game_over:
+            return
+
+        self.sync_ui_with_logic()
+
+        for r in range(self.game_rows):
+            for c in range(self.game_cols):
+                cell = self.game_board.grid[r][c]
+                
+                if cell.isRevealed and not cell.isMine and (r, c) not in self.ai.processed:
+                    self.ai.add_knowledge((r, c), cell.neighbors, self.game_board)
+                    self.ai.processed.add((r, c))
+
+            if len(self.ai.mines) > 0:
+                for mine_coords in self.ai.mines:
+                    memory_constraint = Constraint([mine_coords], 1)
+                    if memory_constraint not in self.ai.knowledge:
+                        self.ai.knowledge.append(memory_constraint)           
+        
+                self.ai.infer()
+
+        action, coords = self.ai.get_hint(self.game_board)
+        
+        if action == "safe":
+            r, c = coords
+            self.hint_message.text = f"AI suy luận: Ô ({r},{c}) an toàn tuyệt đối. Hãy mở nó!"
+            self.ui_grid[r][c].background_color = [0, 1, 1, 1] 
+            self.ui_grid[r][c].color = [0, 0, 0, 1]
+            
+        elif action == "mine":
+            r, c = coords
+            self.hint_message.text = f"AI cảnh báo: Ô ({r},{c}) 100% là mìn. Hãy cắm cờ!"
+            self.ui_grid[r][c].background_color = [1, 0.5, 0, 1] 
+            self.ui_grid[r][c].text = "!"
+            self.ui_grid[r][c].color = [0, 0, 0, 1]
+            
+        elif action == "wrong_flag":
+            r, c = coords
+            self.hint_message.text = f"AI phát hiện: Bạn cắm nhầm cờ ở ({r},{c}). Nó an toàn!"
+            self.ui_grid[r][c].background_color = [1, 0, 1, 1] 
+            
+        else:
+            self.hint_message.text = "AI chưa đủ dữ kiện để đưa ra quyết định chắc chắn!"
 
     def handle_chord(self, r, c):
         if self.game_board.game_over:
@@ -503,9 +640,12 @@ class MinesweeperApp(App):
 
         self.game_board.reveal(r, c)
         
-        cell = self.game_board.grid[r][c]
-        if not cell.isMine:
-            self.ai.add_knowledge((r, c), cell.neighbors, self.game_board)
+        for r in range(self.game_rows):
+            for c in range(self.game_cols):
+                cell = self.game_board.grid[r][c]
+
+                if cell.isRevealed and not cell.isMine and (r, c) not in self.ai.safe:
+                    self.ai.add_knowledge((r, c), cell.neighbors, self.game_board)
 
         self.game_board.check_win() 
         
@@ -519,13 +659,13 @@ class MinesweeperApp(App):
         '''
         if self.game_board.game_over:
             if self.game_board.is_win:
-                self.lives_label.text = "🎉 CHIẾN THẮNG 🎉"
+                self.lives_label.text = "CHIẾN THẮNG!"
                 self.lives_label.color = [0, 1, 0, 1]
             else:
-                self.lives_label.text = "💀 GAME OVER 💀"
+                self.lives_label.text = "GAME OVER!"
                 self.lives_label.color = [1, 0, 0, 1]
         else:
-            self.lives_label.text = f"Mạng sống: {'❤️' * self.game_board.lives}"
+            self.lives_label.text = f"Mạng sống: {self.game_board.lives}"
 
         for r in range(self.game_rows):
             for c in range(self.game_cols):
@@ -537,7 +677,9 @@ class MinesweeperApp(App):
         Tự động tính toán lại kích thước để ép lưới (Grid) hiển thị 
         dưới dạng hình vuông hoàn hảo dựa trên sự thay đổi màn hình thiết bị.
         '''
-        shortest_edge = min(Window.width, Window.height)
+        available_height = Window.height * 0.8 
+        
+        shortest_edge = min(Window.width, available_height)
         square_size = shortest_edge * 0.9
         self.board_layout.size = (square_size, square_size)
 
