@@ -9,6 +9,12 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.core.window import Window
+from kivy.clock import Clock
+from kivy.uix.spinner import Spinner
+from kivy.uix.image import Image 
+from kivy.graphics import Color, RoundedRectangle 
+from kivy.uix.floatlayout import FloatLayout
+from kivy.utils import get_color_from_hex
 
 direction = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, 0), (1, 1), (1, -1), (-1, 1)]
 
@@ -261,7 +267,7 @@ class MinesweeperAI():
             if 0 <= nr < self.rows and 0 <= nc < self.cols:
                 neighbor = board.grid[nr][nc]
                 
-                if (nr, nc) in self.mines:
+                if (nr, nc) in self.mines or (neighbor.isMine and neighbor.isRevealed):
                     remaining_mines -= 1
                     
                 elif not neighbor.isRevealed:
@@ -330,10 +336,6 @@ class MinesweeperAI():
             self.knowledge.extend(new_constraints)
 
             self.knowledge = [c for c in self.knowledge if not c.is_empty()]
-
-            if not changed:
-                if self.brute_force():
-                    changed = True
                 
     def get_hint(self, board):
         for r in range(self.rows):
@@ -350,6 +352,10 @@ class MinesweeperAI():
             r, c = cell
             if not board.grid[r][c].isFlagged and not board.grid[r][c].isRevealed:
                 return ("mine", (r, c))
+        
+        if self.brute_force():
+            self.infer() 
+            return self.get_hint(board)
         
         return ("none", None)
 
@@ -447,8 +453,21 @@ class CellUI(Button):
         
         self.font_size = 24
         self.bold = True
-        self.background_color = [0.8, 0.8, 0.8, 1]
+
+        self.background_color = [0, 0, 0, 0]
+        self.background_normal = '' 
+        self.background_down = ''
+
+        with self.canvas.before:
+            self.bg_color = Color(get_color_from_hex('#DAA351'))
+            self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10])
+
+        self.bind(pos=self.update_rect, size=self.update_rect)
     
+    def update_rect(self, *args):
+        self.bg_rect.pos = self.pos
+        self.bg_rect.size = self.size
+
     def on_touch_down(self, touch):
         '''
         Xử lý sự kiện khi người chơi click chuột phải (cắm/rút cờ).
@@ -483,18 +502,18 @@ class CellUI(Button):
         '''
         if self.logic_cell.isRevealed:
             if self.logic_cell.isMine:
-                self.background_color = [1, 0, 0, 1]
-                self.text = "*"
+                self.bg_color.rgba = [1, 0.4, 0.4, 1] # Màu đỏ pastel (Mìn)
+                self.text = "M" # Bạn có thể đổi thành mìn dễ thương
             else:
-                self.background_color = [1, 1, 1, 1] 
+                self.bg_color.rgba = [1, 1, 1, 0.8] # Trắng hơi trong suốt
                 self.text = str(self.logic_cell.neighbors) if self.logic_cell.neighbors > 0 else ""
+                self.color = [0.2, 0.2, 0.2, 1] # Màu chữ tối lại cho dễ đọc
         else:
             if self.logic_cell.isFlagged:
-                self.background_color = [1, 1, 0, 1] 
-                self.text = "F" 
-                self.color = [0, 0, 0, 1]
+                self.bg_color.rgba = [1, 0.8, 0.4, 1] # Màu vàng cam nhạt
+                self.text = "F"
             else:
-                self.background_color = [0.8, 0.8, 0.8, 1]
+                self.bg_color.rgba = get_color_from_hex('#DAA351') # Màu xám nhạt (chưa mở)
                 self.text = ""
 
 class MinesweeperApp(App):
@@ -512,45 +531,65 @@ class MinesweeperApp(App):
         self.game_rows = 8
         self.game_cols = 8
         self.num_mines = 10
+        self.time_elapsed = 0
+        self.timer_event = None
 
         self.game_board = Board(self.game_rows, self.game_cols, self.num_mines, lives=3)
         self.is_first_click = True
         self.ui_grid = []
         self.ai = MinesweeperAI(self.game_rows, self.game_cols)
         
+        root_layer = FloatLayout()
+        bg = Image(source='background.jpg', fit_mode='cover')
+        root_layer.add_widget(bg)
+
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
-        top_bar = BoxLayout(orientation='horizontal', size_hint=(1, 0.1), spacing=15)
-        
-        self.lives_label = Label(
-            text=f"Mạng sống: {self.game_board.lives}", 
-            font_size=24,
+        top_bar = BoxLayout(orientation='horizontal', size_hint=(1, 0.1), spacing=10)
+
+        self.menu_spinner = Spinner(
+            text='Cài đặt ⚙️',
+            values=('Dễ (8x8)', 'Vừa (12x12)', 'Khó (16x16)', 'Chơi lại 🔄'),
+            size_hint=(0.25, 1),
+            background_color=[1, 0.6, 0.8, 1],
             bold=True
         )
-        top_bar.add_widget(self.lives_label)
-
-        hint_btn = Button(
-            text="Gợi ý",
-            font_size=20, 
-            bold=True, 
-            size_hint=(0.4, 1) 
-        )
+        self.menu_spinner.bind(text=self.on_menu_select)
+        top_bar.add_widget(self.menu_spinner)
+        
+        hint_btn = Button(text="Gợi ý 💡", size_hint=(0.2, 1), background_color=[0.6, 0.8, 1, 1], bold=True)
         hint_btn.bind(on_release=self.give_hint)
         top_bar.add_widget(hint_btn)
+
+        self.timer_label = Label(text="000", size_hint=(0.2, 1), font_size=30, bold=True, color=[0,0,0,1])
+        top_bar.add_widget(self.timer_label)
         
+        self.lives_layout = BoxLayout(orientation='horizontal', size_hint=(0.35, 1))
+        self.update_lives_ui()
+        top_bar.add_widget(self.lives_layout)
+
         main_layout.add_widget(top_bar)
 
-        self.hint_message = Label(
-            text="Trò chơi bắt đầu! AI đang theo dõi...", 
-            font_size=18, 
-            color=[1, 1, 0, 1], 
-            size_hint=(1, 0.05)
-        )
+        self.hint_message = Label(text="Sẵn sàng! Chúc bạn may mắn ❤️", font_size=18, color=[0, 0, 0, 1], size_hint=(1, 0.05), bold=True)
         main_layout.add_widget(self.hint_message)
 
-        root = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(1, 0.85))
-        self.board_layout = GridLayout(cols=self.game_cols, rows=self.game_rows, size_hint=(None, None))
+        board_anchor = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(1, 0.85))
+        self.board_layout = GridLayout(cols=self.game_cols, rows=self.game_rows, size_hint=(None, None), spacing=2) 
+        self.create_grid_ui() 
+        board_anchor.add_widget(self.board_layout)
         
+        main_layout.add_widget(board_anchor)
+        
+        root_layer.add_widget(main_layout)
+        return root_layer
+
+    def create_grid_ui(self):
+        self.board_layout.clear_widgets()
+        self.ui_grid = []
+        
+        self.board_layout.rows = self.game_rows
+        self.board_layout.cols = self.game_cols
+
         self.update_board_size()
         Window.bind(on_resize=self.update_board_size)
         
@@ -562,11 +601,45 @@ class MinesweeperApp(App):
                 self.board_layout.add_widget(btn)
                 ui_row.append(btn)
             self.ui_grid.append(ui_row)
-            
-        root.add_widget(self.board_layout)
-        main_layout.add_widget(root) 
+
+    def update_lives_ui(self):
+        self.lives_layout.clear_widgets()
+        for _ in range(self.game_board.lives):
+            heart = Image(source='heart.png', allow_stretch=True) 
+            self.lives_layout.add_widget(heart)
+
+    def on_menu_select(self, spinner, text):
+        if text == 'Dễ (8x8)':
+            self.reset_game(8, 8, 10)
+        elif text == 'Vừa (12x12)':
+            self.reset_game(12, 12, 20)
+        elif text == 'Khó (16x16)':
+            self.reset_game(16, 16, 40)
+        elif text == 'Chơi lại 🔄':
+            self.reset_game(self.game_rows, self.game_cols, self.num_mines)
         
-        return main_layout
+        spinner.text = 'Cài đặt ⚙️'
+
+    def reset_game(self, rows, cols, mines):
+        self.game_rows = rows
+        self.game_cols = cols
+        self.num_mines = mines
+        
+        self.game_board = Board(self.game_rows, self.game_cols, self.num_mines, lives=3)
+        self.ai = MinesweeperAI(self.game_rows, self.game_cols)
+        self.is_first_click = True
+
+        self.create_grid_ui()
+
+        self.update_lives_ui()
+        self.hint_message.text = "Game mới đã sẵn sàng!"
+        self.hint_message.color = [0, 0, 0, 1]
+        
+        self.time_elapsed = 0
+        self.timer_label.text = "000"
+        if self.timer_event:
+            self.timer_event.cancel()
+            self.timer_event = None
 
     def give_hint(self, instance):
         if self.game_board.game_over:
@@ -595,20 +668,20 @@ class MinesweeperApp(App):
         if action == "safe":
             r, c = coords
             self.hint_message.text = f"AI suy luận: Ô ({r},{c}) an toàn tuyệt đối. Hãy mở nó!"
-            self.ui_grid[r][c].background_color = [0, 1, 1, 1] 
+            self.ui_grid[r][c].bg_color.rgba = [0, 1, 1, 1]
             self.ui_grid[r][c].color = [0, 0, 0, 1]
             
         elif action == "mine":
             r, c = coords
             self.hint_message.text = f"AI cảnh báo: Ô ({r},{c}) 100% là mìn. Hãy cắm cờ!"
-            self.ui_grid[r][c].background_color = [1, 0.5, 0, 1] 
+            self.ui_grid[r][c].bg_color.rgba = [1, 0.6, 0.2, 1]
             self.ui_grid[r][c].text = "!"
             self.ui_grid[r][c].color = [0, 0, 0, 1]
             
         elif action == "wrong_flag":
             r, c = coords
             self.hint_message.text = f"AI phát hiện: Bạn cắm nhầm cờ ở ({r},{c}). Nó an toàn!"
-            self.ui_grid[r][c].background_color = [1, 0, 1, 1] 
+            self.ui_grid[r][c].bg_color.rgba = [1, 0.4, 0.8, 1]
             
         else:
             self.hint_message.text = "AI chưa đủ dữ kiện để đưa ra quyết định chắc chắn!"
@@ -637,6 +710,8 @@ class MinesweeperApp(App):
         if self.is_first_click:
             self.game_board.place_mines(r, c)
             self.is_first_click = False
+            if not self.timer_event:
+                self.timer_event = Clock.schedule_interval(self.update_timer, 1)
 
         self.game_board.reveal(r, c)
         
@@ -651,6 +726,14 @@ class MinesweeperApp(App):
         
         self.sync_ui_with_logic()
 
+    def update_timer(self, dt):
+        if self.game_board.game_over:
+            self.timer_event.cancel()
+            return
+            
+        self.time_elapsed += 1
+        self.timer_label.text = f"{self.time_elapsed:03d}"
+
     def sync_ui_with_logic(self):
         '''
         Đồng bộ toàn bộ giao diện (View) để phản ánh trạng thái mới nhất của Bộ não (Model).
@@ -664,8 +747,8 @@ class MinesweeperApp(App):
             else:
                 self.lives_label.text = "GAME OVER!"
                 self.lives_label.color = [1, 0, 0, 1]
-        else:
-            self.lives_label.text = f"Mạng sống: {self.game_board.lives}"
+        
+        self.update_lives_ui()
 
         for r in range(self.game_rows):
             for c in range(self.game_cols):
