@@ -280,8 +280,6 @@ class MinesweeperAI():
 
             if new_constraint not in self.knowledge:
                 self.knowledge.append(new_constraint)
-        
-        self.infer()
     
     def infer(self):
         changed = True
@@ -362,13 +360,7 @@ class MinesweeperAI():
         return ("none", None)
 
     def brute_force(self):
-        '''
-        Thuật toán Vét cạn (Backtracking/Tank Solver).
-        Gom các constraint giao nhau thành cụm, sinh các trường hợp đặt mìn,
-        và lọc ra những ô luôn luôn là mìn hoặc luôn luôn an toàn.
-        '''
         changed = False
-        
         components = []
         unassigned = self.knowledge.copy()
         
@@ -382,45 +374,71 @@ class MinesweeperAI():
                 added = False
                 for other_c in unassigned[:]:
                     if comp_cells.intersection(other_c.cells):
-                        comp_cells.update(other_c.cells)
-                        comp_constraints.append(other_c)
-                        unassigned.remove(other_c)
-                        added = True
-                        
+                       
+                        if len(comp_cells.union(other_c.cells)) <= 15:
+                            comp_cells.update(other_c.cells)
+                            comp_constraints.append(other_c)
+                            unassigned.remove(other_c)
+                            added = True
+                            
             components.append((list(comp_cells), comp_constraints))
             
         for comp_cells, comp_constraints in components:
-            if len(comp_cells) > 15:
-                continue
-                
             valid_assignments = []
             
+            cell_to_constraints = {i: [] for i in range(len(comp_cells))}
+            for const in comp_constraints:
+                for i, cell in enumerate(comp_cells):
+                    if cell in const.cells:
+                        cell_to_constraints[i].append(const)
+            
+            const_unassigned_count = {const: sum(1 for cell in comp_cells if cell in const.cells) for const in comp_constraints}
+            const_mine_counts = {const: 0 for const in comp_constraints}
+
             def backtrack(index, current_assignment):
                 if index == len(comp_cells):
-                    valid = True
-                    for const in comp_constraints:
-                        mines_in_const = sum(1 for i, cell in enumerate(comp_cells) 
-                                             if cell in const.cells and current_assignment[i])
-                        if mines_in_const != const.mines:
-                            valid = False
-                            break
-                    
-                    if valid:
-                        valid_assignments.append(current_assignment.copy())
+                    valid_assignments.append(current_assignment.copy())
                     return
                 
-                current_assignment[index] = True
-                backtrack(index + 1, current_assignment)
+                can_be_safe = True
+                for const in cell_to_constraints[index]:
+                    if const_mine_counts[const] + (const_unassigned_count[const] - 1) < const.mines:
+                        can_be_safe = False
+                        break
                 
-                current_assignment[index] = False
-                backtrack(index + 1, current_assignment)
+                if can_be_safe:
+                    for const in cell_to_constraints[index]:
+                        const_unassigned_count[const] -= 1
+                    
+                    current_assignment[index] = False
+                    backtrack(index + 1, current_assignment)
+                    
+                    for const in cell_to_constraints[index]:
+                        const_unassigned_count[const] += 1
                 
+                can_be_mine = True
+                for const in cell_to_constraints[index]:
+                    if const_mine_counts[const] + 1 > const.mines:
+                        can_be_mine = False
+                        break
+                
+                if can_be_mine:
+                    for const in cell_to_constraints[index]:
+                        const_unassigned_count[const] -= 1
+                        const_mine_counts[const] += 1
+                        
+                    current_assignment[index] = True
+                    backtrack(index + 1, current_assignment)
+                    
+                    for const in cell_to_constraints[index]:
+                        const_unassigned_count[const] += 1
+                        const_mine_counts[const] -= 1
+            
             backtrack(0, [False] * len(comp_cells))
             
             if valid_assignments:
                 for i, cell in enumerate(comp_cells):
                     is_always_mine = all(assign[i] == True for assign in valid_assignments)
-                    
                     is_always_safe = all(assign[i] == False for assign in valid_assignments)
                     
                     if is_always_mine and cell not in self.mines:
@@ -462,7 +480,7 @@ class CellUI(Button):
         self.background_down = ''
 
         with self.canvas.before:
-            self.bg_color = Color(get_color_from_hex('#DAA351'))
+            self.bg_color = Color(get_color_from_hex("#FFB64A"))
             self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10])
 
         with self.canvas.after:
@@ -516,22 +534,22 @@ class CellUI(Button):
         
         if self.logic_cell.isRevealed:
             if self.logic_cell.isMine:
-                self.bg_color.rgba = [1, 0.4, 0.4, 1] # Màu nền đỏ
-                # THÊM MỚI: Hiện ảnh MÌN
-                self.icon_color.rgba = [1, 1, 1, 1] # Alpha = 1 (Hiện hình)
-                self.icon_rect.source = 'image/bone.png'  # Gắn link file ảnh mìn
+                self.bg_color.rgba = [1, 0.4, 0.4, 1]  
+
+                self.icon_color.rgba = [1, 1, 1, 1] 
+                self.icon_rect.source = 'image/bone.png' 
             else:
                 self.bg_color.rgba = [1, 1, 1, 0.8] 
                 self.text = str(self.logic_cell.neighbors) if self.logic_cell.neighbors > 0 else ""
                 self.color = [0.2, 0.2, 0.2, 1] 
         else:
             if self.logic_cell.isFlagged:
-                self.bg_color.rgba = [1, 0.8, 0.4, 1] # Màu nền vàng
-                # THÊM MỚI: Hiện ảnh CỜ
-                self.icon_color.rgba = [1, 1, 1, 1] # Alpha = 1 (Hiện hình)
-                self.icon_rect.source = 'image/fish.png'  # Gắn link file ảnh cờ
+                self.bg_color.rgba = [1, 0.8, 0.4, 1]
+    
+                self.icon_color.rgba = [1, 1, 1, 1] 
+                self.icon_rect.source = 'image/fish.png'  
             else:
-                self.bg_color.rgba = get_color_from_hex('#DAA351') # Màu xám nhạt (chưa mở)
+                self.bg_color.rgba = get_color_from_hex('#FFB64A') 
                 self.text = ""
 
 class RoundedSpinnerOption(SpinnerOption):
@@ -540,24 +558,21 @@ class RoundedSpinnerOption(SpinnerOption):
     '''
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Tàng hình lớp vỏ mặc định của tùy chọn
+        
         self.background_color = [0, 0, 0, 0]
         self.background_normal = ''
         self.background_down = ''
         
-        # Nhớ áp dụng font chữ cute của bạn
         self.font_name = 'font/hint.ttf' 
-        self.color = [1, 1, 1, 1] # Chữ màu trắng
+        self.color = [1, 1, 1, 1] 
         
-        # Vẽ bo góc cho từng dòng lựa chọn
         with self.canvas.before:
-            self.bg_color = Color(1, 0.7, 0.85, 1) # Màu hồng nhạt hơn nút chính một xíu cho đẹp
-            self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10]) # Bo góc ít hơn nút chính
+            self.bg_color = Color(*get_color_from_hex("#DDB476"),) 
+            self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10]) 
             
         self.bind(pos=self.update_rect, size=self.update_rect)
 
     def update_rect(self, *args):
-        # Tạo một khoảng hở nhỏ (padding) giữa các lựa chọn cho đẹp
         self.bg_rect.pos = (self.x + 2, self.y + 2)
         self.bg_rect.size = (self.width - 4, self.height - 4)
 
@@ -566,15 +581,13 @@ class RoundedSpinner(Spinner):
     Lớp này dùng để bo góc cho CÁI NÚT SPINNER CHÍNH hiển thị trên màn hình.
     '''
     def __init__(self, **kwargs):
-        self.custom_color = kwargs.pop('custom_color', [1, 0.6, 0.8, 1])
+        self.custom_color = kwargs.pop('custom_color', get_color_from_hex("#C9903BFF"))
         super().__init__(**kwargs)
         
-        # Tàng hình vỏ mặc định
         self.background_color = [0, 0, 0, 0]
         self.background_normal = ''
         self.background_down = ''
         
-        # QUAN TRỌNG: Chỉ định danh sách xổ xuống sẽ dùng class bo góc ở trên
         self.option_cls = RoundedSpinnerOption 
         
         with self.canvas.before:
@@ -593,22 +606,17 @@ class RoundedButton(Button):
     Hỗ trợ truyền màu sắc tùy ý qua tham số `custom_color`.
     '''
     def __init__(self, **kwargs):
-        # Lấy màu nền truyền vào (mặc định là màu hồng pastel)
         self.custom_color = kwargs.pop('custom_color', [1, 0.6, 0.8, 1])
         super().__init__(**kwargs)
         
-        # Tàng hình lớp vỏ mặc định
         self.background_color = [0, 0, 0, 0] 
         self.background_normal = ''
         self.background_down = ''
         
-        # Vẽ hình bo góc
         with self.canvas.before:
             self.bg_color = Color(*self.custom_color)
-            # Thay đổi số 25 để tăng giảm độ bo tròn tùy thích
             self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10])
             
-        # Đảm bảo nền co giãn theo màn hình
         self.bind(pos=self.update_rect, size=self.update_rect)
 
     def update_rect(self, *args):
@@ -629,17 +637,12 @@ class MinesweeperApp(App):
         '''
         self.sm = ScreenManager()
         
-        # ==========================================
-        # 1. MÀN HÌNH KHỞI ĐẦU (START SCREEN)
-        # ==========================================
         self.start_screen = Screen(name='start')
         start_layout = FloatLayout()
         
-        # Ảnh nền màn hình bắt đầu
         bg_start = Image(source='image/background.jpg', fit_mode='cover')
         start_layout.add_widget(bg_start)
         
-        # Chữ Tiêu đề (Bạn có thể đổi tên tùy thích)
         title = Label(
             text="Meowsweeper", 
             font_size=100, bold=True, 
@@ -649,15 +652,14 @@ class MinesweeperApp(App):
         )
         start_layout.add_widget(title)
         
-        # Nút Bắt đầu chơi
         start_btn = RoundedButton(
             text="Bắt đầu", 
             font_size=30, bold=True, 
-            font_name='font/hint.ttf', # Nhớ giữ nguyên font của bạn nhé
+            font_name='font/hint.ttf',
             size_hint=(0.4, 0.15), 
             pos_hint={'center_x': 0.5, 'center_y': 0.4}, 
-            custom_color=get_color_from_hex("#C9903B"), # Đổ màu hồng pastel vào đây
-            color=[1, 1, 1, 1] # Đổi chữ thành màu trắng cho nổi bật
+            custom_color=get_color_from_hex("#C9903B"),
+            color=[1, 1, 1, 1]
         )
         start_btn.bind(on_release=self.go_to_game)
         start_layout.add_widget(start_btn)
@@ -665,24 +667,20 @@ class MinesweeperApp(App):
         self.start_screen.add_widget(start_layout)
         self.sm.add_widget(self.start_screen)
 
-        # ==========================================
-        # 2. MÀN HÌNH CHƠI GAME (GAME SCREEN)
-        # ==========================================
         self.game_screen = Screen(name='game')
         
-        # ---- Các biến hệ thống giữ nguyên ----
         self.game_rows = 6
         self.game_cols = 12
         self.num_mines = 10
         self.time_elapsed = 0
         self.timer_event = None
-        self.is_popup_open = False # Biến để chống mở popup nhiều lần
+        self.is_popup_open = False 
 
         self.game_board = Board(self.game_rows, self.game_cols, self.num_mines, lives=3)
         self.is_first_click = True
         self.ui_grid = []
         self.ai = MinesweeperAI(self.game_rows, self.game_cols)
-        # --------------------------------------
+
         
         root_layer = FloatLayout()
         bg_game = Image(source='image/background.jpg', fit_mode='cover')
@@ -690,30 +688,33 @@ class MinesweeperApp(App):
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
-        # --- Thanh Top Bar ---
         top_bar = BoxLayout(orientation='horizontal', size_hint=(1, 0.1), spacing=10)
         
         self.menu_spinner = RoundedSpinner(
             text='Cài đặt',
+            font_size=25,
+            font_name="font/Hint.ttf",
             values=('Dễ', 'Vừa', 'Khó', 'Chơi lại'),
             size_hint=(0.25, 1), 
-            background_color=[1, 0.6, 0.8, 1], 
+            background_color=get_color_from_hex("#E0B067FF"),
             bold=True, 
             background_normal=''
         )
         self.menu_spinner.bind(text=self.on_menu_select)
         top_bar.add_widget(self.menu_spinner)
 
-        hint_btn = RoundedButton(
+        self.hints_left = 3
+
+        self.hint_btn = RoundedButton(
             font_size=25,
-            text="Gợi ý", 
+            text=f"Gợi ý ({self.hints_left})", 
             size_hint=(0.2, 1), 
-            custom_color=get_color_from_hex("#C9903B"), # Màu xanh dương pastel
+            custom_color=get_color_from_hex("#C9903B"),
             bold=True, 
             font_name='font/hint.ttf'
         )
-        hint_btn.bind(on_release=self.give_hint)
-        top_bar.add_widget(hint_btn)
+        self.hint_btn.bind(on_release=self.give_hint)
+        top_bar.add_widget(self.hint_btn)
 
         self.timer_label = Label(text="000", size_hint=(0.2, 1), font_size=30, bold=True, color=[0,0,0,1])
         top_bar.add_widget(self.timer_label)
@@ -727,7 +728,6 @@ class MinesweeperApp(App):
         self.hint_message = Label(text="Sẵn sàng! Chúc bạn may mắn", font_size=18, color=[0, 0, 0, 1], size_hint=(1, 0.05), bold=True)
         main_layout.add_widget(self.hint_message)
 
-        # --- Khung lưới trò chơi ---
         board_anchor = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(1, 0.85))
         self.board_layout = GridLayout(cols=self.game_cols, rows=self.game_rows, size_hint=(None, None), spacing=2)
         
@@ -741,6 +741,8 @@ class MinesweeperApp(App):
         
         Window.bind(on_resize=self.update_board_size)
         
+        self.sync_ui_with_logic()
+
         return self.sm
 
     def go_to_game(self, instance):
@@ -793,6 +795,9 @@ class MinesweeperApp(App):
         self.ai = MinesweeperAI(self.game_rows, self.game_cols)
         self.is_first_click = True
 
+        self.hints_left = 3
+        self.hint_btn.text = f"Gợi ý ({self.hints_left})"
+        
         self.create_grid_ui()
 
         self.update_lives_ui()
@@ -807,8 +812,15 @@ class MinesweeperApp(App):
 
         self.is_popup_open = False
 
+        self.sync_ui_with_logic()
+
     def give_hint(self, instance):
         if self.game_board.game_over:
+            return
+
+        if self.hints_left <= 0:
+            self.hint_message.text = "Hết lượt gợi ý rồi! Tự lực cánh sinh đi nha!"
+            self.hint_message.color = [1, 0, 0, 1]
             return
 
         self.sync_ui_with_logic()
@@ -831,26 +843,35 @@ class MinesweeperApp(App):
 
         action, coords = self.ai.get_hint(self.game_board)
         
+        if action == "none":
+            self.hint_message.text = "AI bó tay! Vẫn giữ nguyên lượt gợi ý cho bạn."
+            self.hint_message.font_name = "font/body.ttf"
+            self.hint_message.color = [0, 0, 0, 1]
+            return 
+
+        self.hints_left -= 1
+        self.hint_btn.text = f"Gợi ý ({self.hints_left})"
+        
         if action == "safe":
             r, c = coords
-            self.hint_message.text = f"AI suy luận: Ô ({r},{c}) an toàn tuyệt đối. Hãy mở nó!"
-            self.ui_grid[r][c].bg_color.rgba = [0, 1, 1, 1]
+            self.hint_message.text = f"Ô ({r},{c}) không có cá. Bạn có thể mở ô."
+            self.ui_grid[r][c].bg_color.rgba = get_color_from_hex("#77DD77")
+            self.hint_message.font_name = "font/body.ttf"
             self.ui_grid[r][c].color = [0, 0, 0, 1]
             
         elif action == "mine":
             r, c = coords
-            self.hint_message.text = f"AI cảnh báo: Ô ({r},{c}) 100% là mìn. Hãy cắm cờ!"
+            self.hint_message.text = f"Ô ({r},{c}) là cá. Hãy đánh dấu vị trí."
             self.ui_grid[r][c].bg_color.rgba = [1, 0.6, 0.2, 1]
             self.ui_grid[r][c].text = "!"
+            self.hint_message.font_name = "font/body.ttf"
             self.ui_grid[r][c].color = [0, 0, 0, 1]
             
         elif action == "wrong_flag":
             r, c = coords
-            self.hint_message.text = f"AI phát hiện: Bạn cắm nhầm cờ ở ({r},{c}). Nó an toàn!"
-            self.ui_grid[r][c].bg_color.rgba = [1, 0.4, 0.8, 1]
-            
-        else:
-            self.hint_message.text = "AI chưa đủ dữ kiện để đưa+ ra quyết định chắc chắn!"
+            self.hint_message.text = f"Ô ({r},{c}) không có cá. Bạn đánh dấu nhầm rồi."
+            self.ui_grid[r][c].bg_color.rgba = get_color_from_hex("#94FBFF")
+            self.hint_message.font_name = "font/body.ttf"
 
     def handle_chord(self, r, c):
         if self.game_board.game_over:
@@ -880,13 +901,6 @@ class MinesweeperApp(App):
                 self.timer_event = Clock.schedule_interval(self.update_timer, 1)
 
         self.game_board.reveal(r, c)
-        
-        for r in range(self.game_rows):
-            for c in range(self.game_cols):
-                cell = self.game_board.grid[r][c]
-
-                if cell.isRevealed and not cell.isMine and (r, c) not in self.ai.safe:
-                    self.ai.add_knowledge((r, c), cell.neighbors, self.game_board)
 
         self.game_board.check_win() 
         
@@ -908,12 +922,10 @@ class MinesweeperApp(App):
         '''
         self.update_lives_ui()
 
-        # 2. Cập nhật màu sắc/hình ảnh của toàn bộ các nút bấm trên lưới
         for r in range(self.game_rows):
             for c in range(self.game_cols):
                 self.ui_grid[r][c].update_display()
                 
-        # 3. Hiển thị Popup kết thúc game (Thay cho cái lives_label cũ)
         if self.game_board.game_over:
             self.show_endgame_popup(self.game_board.is_win)  
 
@@ -925,71 +937,84 @@ class MinesweeperApp(App):
         available_width = Window.width * 0.95
         available_height = Window.height * 0.75 
         
-        # 2. Lấy khoảng cách giữa các ô (Spacing)
-        # Nếu ở trên bạn đặt spacing=2, ta cần trừ hao phần trống này
         spacing_size = 2 
         total_spacing_x = spacing_size * (self.game_cols - 1)
         total_spacing_y = spacing_size * (self.game_rows - 1)
         
-        # 3. Tính xem 1 ô (cell) có thể to tối đa bao nhiêu 
-        # Nếu ép theo chiều ngang
         max_cell_width = (available_width - total_spacing_x) / self.game_cols
-        # Nếu ép theo chiều dọc
         max_cell_height = (available_height - total_spacing_y) / self.game_rows
         
-        # 4. CHỐT KÍCH THƯỚC Ô VUÔNG (Lấy giá trị nhỏ hơn để không bị lẹm khỏi màn hình)
         perfect_cell_size = min(max_cell_width, max_cell_height)
         
-        # 5. Tính ngược lại kích thước của toàn bộ Bảng chơi
         board_width = (perfect_cell_size * self.game_cols) + total_spacing_x
         board_height = (perfect_cell_size * self.game_rows) + total_spacing_y
         
-        # 6. Cập nhật kích thước mới cho Grid
         self.board_layout.size = (board_width, board_height)
 
     def show_endgame_popup(self, is_win):
-        '''Tạo và hiển thị cửa sổ nổi khi kết thúc game'''
-        # Chống mở nhiều bảng cùng lúc
+        '''Tạo và hiển thị cửa sổ nổi kết thúc game: Nền trắng trong suốt, giới hạn kích thước'''
         if self.is_popup_open:
             return
         self.is_popup_open = True
         
-        # Khung chứa nội dung popup
+        p_width = min(Window.width * 0.7, 500)
+        p_height = min(Window.height * 0.45, 400)
+        
         content = BoxLayout(orientation='vertical', padding=20, spacing=20)
         
-        # Lời nhắn và màu sắc
-        msg = "🎉 CHIẾN THẮNG! 🎉" if is_win else "💀 BÙM! GAME OVER! 💀"
-        color = [0.2, 0.8, 0.2, 1] if is_win else [1, 0.2, 0.2, 1]
+        msg = "Bạn đã bảo vệ được số cá!" if is_win else f"   Cá của bạn đã bị\nchú mèo khác ăn hết..."
+        color = [0.2, 0.7, 0.2, 1] if is_win else [0.9, 0.2, 0.2, 1]
         
-        lbl = Label(text=msg, font_size=30, bold=True, color=color)
+        lbl = Label(
+            text=msg, 
+            font_size=30, bold=True, color=color,
+            font_name='font/hint.ttf' 
+        )
         content.add_widget(lbl)
         
-        # Nút chơi lại
+        if is_win:
+            finish_time = f"Thời gian: {self.time_elapsed} giây"
+            lbl_time = Label(
+                text=finish_time, 
+                font_size=22, 
+                color=[0.4, 0.4, 0.4, 1], 
+                font_name='font/hint.ttf'
+            )
+            content.add_widget(lbl_time)
+
         btn = RoundedButton(
-            text="Chơi lại", font_size=24, bold=True, 
+            text="Chơi lại", 
+            font_size=24, bold=True, 
             font_name='font/hint.ttf',
-            size_hint=(1, 0.5), 
+            size_hint=(1, 0.6), 
             custom_color=get_color_from_hex("#C9903B")
         )
         btn.bind(on_release=self.restart_from_popup)
         content.add_widget(btn)
         
-        # Tạo Popup
         self.endgame_popup = Popup(
-            title="Kết quả trận đấu",
-            title_color=[0, 0, 0, 1], # Tiêu đề màu đen
-            separator_color=[1, 0.6, 0.8, 1], # Thanh ngang màu hồng
-            background_color=[1, 1, 1, 0.9], # Nền trắng hơi trong suốt
+            title="Thông báo",
+            title_color=[0, 0, 0, 1], 
+            title_font='font/hint.ttf',
+            title_size='18sp',
+            title_align='center',
+            separator_color=get_color_from_hex("#C9903B"), 
+            
+            background='', 
+            background_color=[1, 1, 1, 0.85], 
+            
             content=content,
-            size_hint=(0.6, 0.4), # Kích thước chiếm 60% chiều ngang, 40% chiều dọc
-            auto_dismiss=False # Bắt buộc phải bấm nút "Chơi lại", không cho bấm ra ngoài để tắt
+            size_hint=(None, None), 
+            size=(p_width, p_height), 
+            auto_dismiss=False
         ) 
+        
         self.endgame_popup.open()
 
     def restart_from_popup(self, instance):
         '''Xử lý khi người chơi bấm nút Chơi lại trên Popup'''
-        self.endgame_popup.dismiss() # Đóng bảng popup
-        self.reset_game(self.game_rows, self.game_cols, self.num_mines) # Gọi lại hàm reset game của bạn
+        self.endgame_popup.dismiss() 
+        self.reset_game(self.game_rows, self.game_cols, self.num_mines) 
 
 if __name__ == '__main__':
     MinesweeperApp().run()
