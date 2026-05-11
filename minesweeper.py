@@ -10,11 +10,13 @@ from kivy.uix.button import Button
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.core.window import Window
 from kivy.clock import Clock
-from kivy.uix.spinner import Spinner
+from kivy.uix.spinner import Spinner, SpinnerOption
 from kivy.uix.image import Image 
-from kivy.graphics import Color, RoundedRectangle 
+from kivy.graphics import Color, RoundedRectangle, Rectangle
 from kivy.uix.floatlayout import FloatLayout
 from kivy.utils import get_color_from_hex
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.popup import Popup
 
 direction = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, 0), (1, 1), (1, -1), (-1, 1)]
 
@@ -453,6 +455,7 @@ class CellUI(Button):
         
         self.font_size = 24
         self.bold = True
+        self.font_name = 'font/Board.ttf'
 
         self.background_color = [0, 0, 0, 0]
         self.background_normal = '' 
@@ -462,11 +465,19 @@ class CellUI(Button):
             self.bg_color = Color(get_color_from_hex('#DAA351'))
             self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10])
 
+        with self.canvas.after:
+            self.icon_color = Color(1, 1, 1, 0)
+            self.icon_rect = Rectangle(size=self.size, pos=self.pos)
+
         self.bind(pos=self.update_rect, size=self.update_rect)
     
     def update_rect(self, *args):
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
+
+        padding = min(self.width, self.height) * 0.15
+        self.icon_rect.pos = (self.x + padding, self.y + padding)
+        self.icon_rect.size = (self.width - 2*padding, self.height - 2*padding)
 
     def on_touch_down(self, touch):
         '''
@@ -500,21 +511,109 @@ class CellUI(Button):
         Đồng bộ giao diện của nút bấm dựa trên trạng thái hiện tại của logic_cell.
         Đổi màu nền đỏ nếu có mìn, hiện số nếu an toàn, hoặc hiện chữ 'F' nếu cắm cờ.
         '''
+        self.text = ""
+        self.icon_color.rgba = [1, 1, 1, 0] 
+        
         if self.logic_cell.isRevealed:
             if self.logic_cell.isMine:
-                self.bg_color.rgba = [1, 0.4, 0.4, 1] # Màu đỏ pastel (Mìn)
-                self.text = "M" # Bạn có thể đổi thành mìn dễ thương
+                self.bg_color.rgba = [1, 0.4, 0.4, 1] # Màu nền đỏ
+                # THÊM MỚI: Hiện ảnh MÌN
+                self.icon_color.rgba = [1, 1, 1, 1] # Alpha = 1 (Hiện hình)
+                self.icon_rect.source = 'image/bone.png'  # Gắn link file ảnh mìn
             else:
-                self.bg_color.rgba = [1, 1, 1, 0.8] # Trắng hơi trong suốt
+                self.bg_color.rgba = [1, 1, 1, 0.8] 
                 self.text = str(self.logic_cell.neighbors) if self.logic_cell.neighbors > 0 else ""
-                self.color = [0.2, 0.2, 0.2, 1] # Màu chữ tối lại cho dễ đọc
+                self.color = [0.2, 0.2, 0.2, 1] 
         else:
             if self.logic_cell.isFlagged:
-                self.bg_color.rgba = [1, 0.8, 0.4, 1] # Màu vàng cam nhạt
-                self.text = "F"
+                self.bg_color.rgba = [1, 0.8, 0.4, 1] # Màu nền vàng
+                # THÊM MỚI: Hiện ảnh CỜ
+                self.icon_color.rgba = [1, 1, 1, 1] # Alpha = 1 (Hiện hình)
+                self.icon_rect.source = 'image/fish.png'  # Gắn link file ảnh cờ
             else:
                 self.bg_color.rgba = get_color_from_hex('#DAA351') # Màu xám nhạt (chưa mở)
                 self.text = ""
+
+class RoundedSpinnerOption(SpinnerOption):
+    '''
+    Lớp này dùng để bo góc cho các lựa chọn NẰM BÊN TRONG danh sách xổ xuống.
+    '''
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Tàng hình lớp vỏ mặc định của tùy chọn
+        self.background_color = [0, 0, 0, 0]
+        self.background_normal = ''
+        self.background_down = ''
+        
+        # Nhớ áp dụng font chữ cute của bạn
+        self.font_name = 'font/hint.ttf' 
+        self.color = [1, 1, 1, 1] # Chữ màu trắng
+        
+        # Vẽ bo góc cho từng dòng lựa chọn
+        with self.canvas.before:
+            self.bg_color = Color(1, 0.7, 0.85, 1) # Màu hồng nhạt hơn nút chính một xíu cho đẹp
+            self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10]) # Bo góc ít hơn nút chính
+            
+        self.bind(pos=self.update_rect, size=self.update_rect)
+
+    def update_rect(self, *args):
+        # Tạo một khoảng hở nhỏ (padding) giữa các lựa chọn cho đẹp
+        self.bg_rect.pos = (self.x + 2, self.y + 2)
+        self.bg_rect.size = (self.width - 4, self.height - 4)
+
+class RoundedSpinner(Spinner):
+    '''
+    Lớp này dùng để bo góc cho CÁI NÚT SPINNER CHÍNH hiển thị trên màn hình.
+    '''
+    def __init__(self, **kwargs):
+        self.custom_color = kwargs.pop('custom_color', [1, 0.6, 0.8, 1])
+        super().__init__(**kwargs)
+        
+        # Tàng hình vỏ mặc định
+        self.background_color = [0, 0, 0, 0]
+        self.background_normal = ''
+        self.background_down = ''
+        
+        # QUAN TRỌNG: Chỉ định danh sách xổ xuống sẽ dùng class bo góc ở trên
+        self.option_cls = RoundedSpinnerOption 
+        
+        with self.canvas.before:
+            self.bg_color = Color(*self.custom_color)
+            self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10])
+            
+        self.bind(pos=self.update_rect, size=self.update_rect)
+
+    def update_rect(self, *args):
+        self.bg_rect.pos = self.pos
+        self.bg_rect.size = self.size
+
+class RoundedButton(Button):
+    '''
+    Lớp nút bấm tùy chỉnh để có viền bo góc.
+    Hỗ trợ truyền màu sắc tùy ý qua tham số `custom_color`.
+    '''
+    def __init__(self, **kwargs):
+        # Lấy màu nền truyền vào (mặc định là màu hồng pastel)
+        self.custom_color = kwargs.pop('custom_color', [1, 0.6, 0.8, 1])
+        super().__init__(**kwargs)
+        
+        # Tàng hình lớp vỏ mặc định
+        self.background_color = [0, 0, 0, 0] 
+        self.background_normal = ''
+        self.background_down = ''
+        
+        # Vẽ hình bo góc
+        with self.canvas.before:
+            self.bg_color = Color(*self.custom_color)
+            # Thay đổi số 25 để tăng giảm độ bo tròn tùy thích
+            self.bg_rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[10])
+            
+        # Đảm bảo nền co giãn theo màn hình
+        self.bind(pos=self.update_rect, size=self.update_rect)
+
+    def update_rect(self, *args):
+        self.bg_rect.pos = self.pos
+        self.bg_rect.size = self.size
 
 class MinesweeperApp(App):
     '''
@@ -528,60 +627,125 @@ class MinesweeperApp(App):
         Returns:
             BoxLayout: Trả về khung bố cục gốc (chứa nhãn mạng sống và lưới game).
         '''
-        self.game_rows = 8
-        self.game_cols = 8
+        self.sm = ScreenManager()
+        
+        # ==========================================
+        # 1. MÀN HÌNH KHỞI ĐẦU (START SCREEN)
+        # ==========================================
+        self.start_screen = Screen(name='start')
+        start_layout = FloatLayout()
+        
+        # Ảnh nền màn hình bắt đầu
+        bg_start = Image(source='image/background.jpg', fit_mode='cover')
+        start_layout.add_widget(bg_start)
+        
+        # Chữ Tiêu đề (Bạn có thể đổi tên tùy thích)
+        title = Label(
+            text="Meowsweeper", 
+            font_size=100, bold=True, 
+            color=get_color_from_hex("#C9903B"),
+            font_name='font/head.ttf',
+            pos_hint={'center_x': 0.5, 'center_y': 0.7}
+        )
+        start_layout.add_widget(title)
+        
+        # Nút Bắt đầu chơi
+        start_btn = RoundedButton(
+            text="Bắt đầu", 
+            font_size=30, bold=True, 
+            font_name='font/hint.ttf', # Nhớ giữ nguyên font của bạn nhé
+            size_hint=(0.4, 0.15), 
+            pos_hint={'center_x': 0.5, 'center_y': 0.4}, 
+            custom_color=get_color_from_hex("#C9903B"), # Đổ màu hồng pastel vào đây
+            color=[1, 1, 1, 1] # Đổi chữ thành màu trắng cho nổi bật
+        )
+        start_btn.bind(on_release=self.go_to_game)
+        start_layout.add_widget(start_btn)
+        
+        self.start_screen.add_widget(start_layout)
+        self.sm.add_widget(self.start_screen)
+
+        # ==========================================
+        # 2. MÀN HÌNH CHƠI GAME (GAME SCREEN)
+        # ==========================================
+        self.game_screen = Screen(name='game')
+        
+        # ---- Các biến hệ thống giữ nguyên ----
+        self.game_rows = 6
+        self.game_cols = 12
         self.num_mines = 10
         self.time_elapsed = 0
         self.timer_event = None
+        self.is_popup_open = False # Biến để chống mở popup nhiều lần
 
         self.game_board = Board(self.game_rows, self.game_cols, self.num_mines, lives=3)
         self.is_first_click = True
         self.ui_grid = []
         self.ai = MinesweeperAI(self.game_rows, self.game_cols)
+        # --------------------------------------
         
         root_layer = FloatLayout()
-        bg = Image(source='background.jpg', fit_mode='cover')
-        root_layer.add_widget(bg)
+        bg_game = Image(source='image/background.jpg', fit_mode='cover')
+        root_layer.add_widget(bg_game)
 
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
+        # --- Thanh Top Bar ---
         top_bar = BoxLayout(orientation='horizontal', size_hint=(1, 0.1), spacing=10)
-
-        self.menu_spinner = Spinner(
-            text='Cài đặt ⚙️',
-            values=('Dễ (8x8)', 'Vừa (12x12)', 'Khó (16x16)', 'Chơi lại 🔄'),
-            size_hint=(0.25, 1),
-            background_color=[1, 0.6, 0.8, 1],
-            bold=True
+        
+        self.menu_spinner = RoundedSpinner(
+            text='Cài đặt',
+            values=('Dễ', 'Vừa', 'Khó', 'Chơi lại'),
+            size_hint=(0.25, 1), 
+            background_color=[1, 0.6, 0.8, 1], 
+            bold=True, 
+            background_normal=''
         )
         self.menu_spinner.bind(text=self.on_menu_select)
         top_bar.add_widget(self.menu_spinner)
-        
-        hint_btn = Button(text="Gợi ý 💡", size_hint=(0.2, 1), background_color=[0.6, 0.8, 1, 1], bold=True)
+
+        hint_btn = RoundedButton(
+            font_size=25,
+            text="Gợi ý", 
+            size_hint=(0.2, 1), 
+            custom_color=get_color_from_hex("#C9903B"), # Màu xanh dương pastel
+            bold=True, 
+            font_name='font/hint.ttf'
+        )
         hint_btn.bind(on_release=self.give_hint)
         top_bar.add_widget(hint_btn)
 
         self.timer_label = Label(text="000", size_hint=(0.2, 1), font_size=30, bold=True, color=[0,0,0,1])
         top_bar.add_widget(self.timer_label)
-        
+
         self.lives_layout = BoxLayout(orientation='horizontal', size_hint=(0.35, 1))
         self.update_lives_ui()
         top_bar.add_widget(self.lives_layout)
 
         main_layout.add_widget(top_bar)
 
-        self.hint_message = Label(text="Sẵn sàng! Chúc bạn may mắn ❤️", font_size=18, color=[0, 0, 0, 1], size_hint=(1, 0.05), bold=True)
+        self.hint_message = Label(text="Sẵn sàng! Chúc bạn may mắn", font_size=18, color=[0, 0, 0, 1], size_hint=(1, 0.05), bold=True)
         main_layout.add_widget(self.hint_message)
 
+        # --- Khung lưới trò chơi ---
         board_anchor = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(1, 0.85))
-        self.board_layout = GridLayout(cols=self.game_cols, rows=self.game_rows, size_hint=(None, None), spacing=2) 
+        self.board_layout = GridLayout(cols=self.game_cols, rows=self.game_rows, size_hint=(None, None), spacing=2)
+        
         self.create_grid_ui() 
         board_anchor.add_widget(self.board_layout)
-        
         main_layout.add_widget(board_anchor)
         
         root_layer.add_widget(main_layout)
-        return root_layer
+        self.game_screen.add_widget(root_layer)
+        self.sm.add_widget(self.game_screen)
+        
+        Window.bind(on_resize=self.update_board_size)
+        
+        return self.sm
+
+    def go_to_game(self, instance):
+        '''Hàm để chuyển từ màn hình Start sang màn hình Game'''
+        self.sm.current = 'game'
 
     def create_grid_ui(self):
         self.board_layout.clear_widgets()
@@ -605,20 +769,20 @@ class MinesweeperApp(App):
     def update_lives_ui(self):
         self.lives_layout.clear_widgets()
         for _ in range(self.game_board.lives):
-            heart = Image(source='heart.png', allow_stretch=True) 
+            heart = Image(source='image/heart.png', allow_stretch=True) 
             self.lives_layout.add_widget(heart)
 
     def on_menu_select(self, spinner, text):
-        if text == 'Dễ (8x8)':
-            self.reset_game(8, 8, 10)
-        elif text == 'Vừa (12x12)':
-            self.reset_game(12, 12, 20)
-        elif text == 'Khó (16x16)':
-            self.reset_game(16, 16, 40)
-        elif text == 'Chơi lại 🔄':
+        if text == 'Dễ':
+            self.reset_game(6, 12, 10)
+        elif text == 'Vừa':
+            self.reset_game(10, 21, 35)
+        elif text == 'Khó':
+            self.reset_game(13, 28, 75)
+        elif text == 'Chơi lại':
             self.reset_game(self.game_rows, self.game_cols, self.num_mines)
         
-        spinner.text = 'Cài đặt ⚙️'
+        spinner.text = 'Cài đặt'
 
     def reset_game(self, rows, cols, mines):
         self.game_rows = rows
@@ -640,6 +804,8 @@ class MinesweeperApp(App):
         if self.timer_event:
             self.timer_event.cancel()
             self.timer_event = None
+
+        self.is_popup_open = False
 
     def give_hint(self, instance):
         if self.game_board.game_over:
@@ -684,7 +850,7 @@ class MinesweeperApp(App):
             self.ui_grid[r][c].bg_color.rgba = [1, 0.4, 0.8, 1]
             
         else:
-            self.hint_message.text = "AI chưa đủ dữ kiện để đưa ra quyết định chắc chắn!"
+            self.hint_message.text = "AI chưa đủ dữ kiện để đưa+ ra quyết định chắc chắn!"
 
     def handle_chord(self, r, c):
         if self.game_board.game_over:
@@ -740,31 +906,90 @@ class MinesweeperApp(App):
         Cập nhật Label thông báo chiến thắng/thua cuộc hoặc số mạng hiện tại, 
         và làm mới màu sắc của tất cả nút bấm.
         '''
-        if self.game_board.game_over:
-            if self.game_board.is_win:
-                self.lives_label.text = "CHIẾN THẮNG!"
-                self.lives_label.color = [0, 1, 0, 1]
-            else:
-                self.lives_label.text = "GAME OVER!"
-                self.lives_label.color = [1, 0, 0, 1]
-        
         self.update_lives_ui()
 
+        # 2. Cập nhật màu sắc/hình ảnh của toàn bộ các nút bấm trên lưới
         for r in range(self.game_rows):
             for c in range(self.game_cols):
                 self.ui_grid[r][c].update_display()
                 
+        # 3. Hiển thị Popup kết thúc game (Thay cho cái lives_label cũ)
+        if self.game_board.game_over:
+            self.show_endgame_popup(self.game_board.is_win)  
 
     def update_board_size(self, *args):
         '''
         Tự động tính toán lại kích thước để ép lưới (Grid) hiển thị 
         dưới dạng hình vuông hoàn hảo dựa trên sự thay đổi màn hình thiết bị.
         '''
-        available_height = Window.height * 0.8 
+        available_width = Window.width * 0.95
+        available_height = Window.height * 0.75 
         
-        shortest_edge = min(Window.width, available_height)
-        square_size = shortest_edge * 0.9
-        self.board_layout.size = (square_size, square_size)
+        # 2. Lấy khoảng cách giữa các ô (Spacing)
+        # Nếu ở trên bạn đặt spacing=2, ta cần trừ hao phần trống này
+        spacing_size = 2 
+        total_spacing_x = spacing_size * (self.game_cols - 1)
+        total_spacing_y = spacing_size * (self.game_rows - 1)
+        
+        # 3. Tính xem 1 ô (cell) có thể to tối đa bao nhiêu 
+        # Nếu ép theo chiều ngang
+        max_cell_width = (available_width - total_spacing_x) / self.game_cols
+        # Nếu ép theo chiều dọc
+        max_cell_height = (available_height - total_spacing_y) / self.game_rows
+        
+        # 4. CHỐT KÍCH THƯỚC Ô VUÔNG (Lấy giá trị nhỏ hơn để không bị lẹm khỏi màn hình)
+        perfect_cell_size = min(max_cell_width, max_cell_height)
+        
+        # 5. Tính ngược lại kích thước của toàn bộ Bảng chơi
+        board_width = (perfect_cell_size * self.game_cols) + total_spacing_x
+        board_height = (perfect_cell_size * self.game_rows) + total_spacing_y
+        
+        # 6. Cập nhật kích thước mới cho Grid
+        self.board_layout.size = (board_width, board_height)
+
+    def show_endgame_popup(self, is_win):
+        '''Tạo và hiển thị cửa sổ nổi khi kết thúc game'''
+        # Chống mở nhiều bảng cùng lúc
+        if self.is_popup_open:
+            return
+        self.is_popup_open = True
+        
+        # Khung chứa nội dung popup
+        content = BoxLayout(orientation='vertical', padding=20, spacing=20)
+        
+        # Lời nhắn và màu sắc
+        msg = "🎉 CHIẾN THẮNG! 🎉" if is_win else "💀 BÙM! GAME OVER! 💀"
+        color = [0.2, 0.8, 0.2, 1] if is_win else [1, 0.2, 0.2, 1]
+        
+        lbl = Label(text=msg, font_size=30, bold=True, color=color)
+        content.add_widget(lbl)
+        
+        # Nút chơi lại
+        btn = RoundedButton(
+            text="Chơi lại", font_size=24, bold=True, 
+            font_name='font/hint.ttf',
+            size_hint=(1, 0.5), 
+            custom_color=get_color_from_hex("#C9903B")
+        )
+        btn.bind(on_release=self.restart_from_popup)
+        content.add_widget(btn)
+        
+        # Tạo Popup
+        self.endgame_popup = Popup(
+            title="Kết quả trận đấu",
+            title_color=[0, 0, 0, 1], # Tiêu đề màu đen
+            separator_color=[1, 0.6, 0.8, 1], # Thanh ngang màu hồng
+            background_color=[1, 1, 1, 0.9], # Nền trắng hơi trong suốt
+            content=content,
+            size_hint=(0.6, 0.4), # Kích thước chiếm 60% chiều ngang, 40% chiều dọc
+            auto_dismiss=False # Bắt buộc phải bấm nút "Chơi lại", không cho bấm ra ngoài để tắt
+        ) 
+        self.endgame_popup.open()
+
+    def restart_from_popup(self, instance):
+        '''Xử lý khi người chơi bấm nút Chơi lại trên Popup'''
+        self.endgame_popup.dismiss() # Đóng bảng popup
+        self.reset_game(self.game_rows, self.game_cols, self.num_mines) # Gọi lại hàm reset game của bạn
 
 if __name__ == '__main__':
     MinesweeperApp().run()
