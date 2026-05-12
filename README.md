@@ -37,7 +37,7 @@ Hãy dùng tư duy logic của bạn để hóa thân thành "vệ sĩ", dựa v
 ## 🚀 Hướng dẫn cài đặt
 
 **1. Yêu cầu hệ thống:**
-* Python 3.x
+* Python 3.11.9
 * Thư viện Kivy
 
 **2. Cài đặt:**
