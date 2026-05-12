@@ -232,21 +232,62 @@ class Board():
                     self.grid[r][c].isRevealed = True
 
 class Constraint():
+    '''
+    Lớp đại diện cho một mệnh đề/ràng buộc logic trong game.
+    Ví dụ: "Trong tập hợp 3 ô (A, B, C) này có chính xác 1 quả mìn".
+
+    Attributes:
+        cells (set): Tập hợp các tọa độ (r, c) của các ô chưa mở.
+        mines (int): Số lượng mìn chắc chắn nằm trong tập hợp các ô trên.
+    '''
     def __init__(self, cells, mines):
+        '''
+        Khởi tạo một ràng buộc mới.
+        
+        Args:
+            cells (list/set): Danh sách các ô liên quan đến ràng buộc.
+            mines (int): Số mìn nằm trong các ô này.
+        '''
         self.cells = set(cells)
         self.mines = mines
 
     def __eq__(self, other):
+        '''Kiểm tra hai ràng buộc có giống hệt nhau không.'''
         return self.cells == other.cells and self.mines == other.mines
 
     def __hash__(self):
+        '''Cho phép đối tượng Constraint được lưu trữ bên trong một Set.'''
         return hash((frozenset(self.cells), self.mines))
 
     def is_empty(self):
+        '''
+        Kiểm tra xem ràng buộc này đã rỗng (không còn ô nào) hay chưa.
+        
+        Returns:
+            bool: True nếu tập hợp cells rỗng, ngược lại là False.
+        '''
         return len(self.cells) == 0
     
 class MinesweeperAI():
+    '''
+    Lớp Trí tuệ nhân tạo (AI) giúp suy luận và giải game Dò Mìn.
+
+    Attributes:
+        rows (int): Số hàng của bàn cờ.
+        cols (int): Số cột của bàn cờ.
+        knowledge (list): Danh sách các đối tượng Constraint (Cơ sở tri thức).
+        safe (set): Tập hợp tọa độ các ô chắc chắn an toàn.
+        mines (set): Tập hợp tọa độ các ô chắc chắn là mìn.
+        processed (set): Tập hợp các ô đã được AI xử lý.
+    '''
     def __init__(self, rows, cols):
+        '''
+        Khởi tạo bộ não AI với kích thước bàn cờ.
+        
+        Args:
+            rows (int): Số hàng.
+            cols (int): Số cột.
+        '''
         self.rows = rows
         self.cols = cols
     
@@ -256,6 +297,18 @@ class MinesweeperAI():
         self.processed = set()
     
     def add_knowledge(self, cell, number, board):
+        '''
+        Cập nhật cơ sở tri thức của AI mỗi khi một ô mới được mở.
+        Nó sẽ quét các ô lân cận để tạo ra một Ràng buộc (Constraint) mới.
+
+        Args:
+            cell (tuple): Tọa độ (r, c) của ô vừa được mở.
+            number (int): Con số hiển thị trên ô đó (tổng số mìn xung quanh).
+            board (Board): Đối tượng bàn cờ hiện tại để lấy dữ liệu.
+            
+        Returns:
+            None. Tri thức mới sẽ được lưu vào thuộc tính `knowledge`.
+        '''
         r, c = cell
 
         self.safe.add(cell)
@@ -282,6 +335,18 @@ class MinesweeperAI():
                 self.knowledge.append(new_constraint)
     
     def infer(self):
+        '''
+        Thuật toán cốt lõi để suy luận logic từ Cơ sở tri thức hiện tại.
+        Thực hiện các bước:
+        1. Tìm các ràng buộc hiển nhiên (mines == 0 hoặc mines == số ô).
+        2. Đơn giản hóa các ràng buộc cũ nếu đã biết chắc chắn ô nào là mìn/an toàn.
+        3. Áp dụng lý thuyết tập hợp (Subset Rule): Nếu tập A là con của tập B, 
+           ta có thể suy ra ràng buộc mới cho phần hiệu (B - A).
+
+        Returns:
+            None. Thuộc tính `safe`, `mines` và `knowledge` sẽ được cập nhật liên tục 
+            cho đến khi không thể suy luận thêm.
+        '''
         changed = True
         while changed:
             changed = False
@@ -338,6 +403,19 @@ class MinesweeperAI():
             self.knowledge = [c for c in self.knowledge if not c.is_empty()]
                 
     def get_hint(self, board):
+        '''
+        Cung cấp gợi ý nước đi tiếp theo cho người chơi.
+        
+        Args:
+            board (Board): Trạng thái bàn cờ hiện tại.
+            
+        Returns:
+            tuple: Trả về một tuple có dạng (action_type, (r, c)).
+                - ("wrong_flag", (r, c)): Người chơi cắm cờ sai vị trí.
+                - ("safe", (r, c)): Có ô chắc chắn an toàn để mở.
+                - ("mine", (r, c)): Có ô chắc chắn là mìn để cắm cờ.
+                - ("none", None): Bế tắc, AI không thể suy luận chắc chắn.
+        '''
         for r in range(self.rows):
             for c in range(self.cols):
                 if board.grid[r][c].isFlagged and (r, c) in self.safe:
@@ -360,6 +438,16 @@ class MinesweeperAI():
         return ("none", None)
 
     def brute_force(self):
+        '''
+        Thuật toán vét cạn có tối ưu (Backtracking). Được gọi khi hàm infer() bế tắc.
+        Hàm sẽ gom nhóm các ràng buộc giao nhau thành các Cụm (Components) độc lập.
+        Sau đó thử giả định mọi trường hợp mìn có thể xảy ra trong từng Cụm. 
+        Nếu một ô LUÔN an toàn hoặc LUÔN là mìn trong mọi trường hợp hợp lệ, 
+        ô đó sẽ được đưa vào tri thức chuẩn xác.
+        
+        Returns:
+            bool: True nếu tìm ra thêm ô an toàn hoặc mìn mới, ngược lại là False.
+        '''
         changed = False
         components = []
         unassigned = self.knowledge.copy()
@@ -452,18 +540,29 @@ class MinesweeperAI():
     
 class CellUI(Button):
     '''
-    Lớp giao diện đại diện cho một nút bấm (ô) trên màn hình.
-    Kế thừa từ Button của thư viện Kivy.
+    Lớp giao diện đại diện cho một nút bấm (ô) trên màn hình (View).
+    Kế thừa từ Button của thư viện Kivy. Quản lý hiển thị hình ảnh, 
+    màu sắc và bắt các sự kiện tương tác từ chuột/cảm ứng.
+    
+    Attributes:
+        logic_cell (Cell): Tham chiếu đến đối tượng dữ liệu logic của ô này.
+        r (int): Tọa độ hàng của ô trên lưới.
+        c (int): Tọa độ cột của ô trên lưới.
+        app_ref (MeowsweeperApp): Tham chiếu đến ứng dụng gốc để gọi ngược lại các hàm xử lý.
+        bg_color (Color): Thuộc tính màu nền tùy chỉnh trên canvas.
+        bg_rect (RoundedRectangle): Khối hình chữ nhật bo góc làm nền.
+        icon_color (Color): Màu sắc/độ trong suốt của icon.
+        icon_rect (Rectangle): Khối hình chữ nhật chứa texture của icon (cờ/mìn).
     '''
     def __init__(self, logic_cell, r, c, app_ref, **kwargs):
         '''
-        Khởi tạo nút bấm và liên kết nó với một đối tượng Cell logic.
+        Khởi tạo giao diện ô và thiết lập các thành phần đồ họa mặc định.
         
         Args:
-            logic_cell (Cell): Đối tượng chứa dữ liệu logic của ô này.
-            r (int): Tọa độ hàng của ô trên lưới.
-            c (int): Tọa độ cột của ô trên lưới.
-            app_ref (MinesweeperApp): Tham chiếu đến ứng dụng gốc để gọi ngược lại.
+            logic_cell (Cell): Đối tượng chứa dữ liệu logic.
+            r (int): Tọa độ hàng.
+            c (int): Tọa độ cột.
+            app_ref (MeowsweeperApp): Đối tượng app chính.
         '''
         super().__init__(**kwargs)
         self.logic_cell = logic_cell
@@ -490,6 +589,10 @@ class CellUI(Button):
         self.bind(pos=self.update_rect, size=self.update_rect)
     
     def update_rect(self, *args):
+        '''
+        Hàm callback tự động cập nhật lại kích thước và vị trí của các khối Canvas
+        mỗi khi cửa sổ ứng dụng bị thay đổi kích thước.
+        '''
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
 
@@ -499,7 +602,15 @@ class CellUI(Button):
 
     def on_touch_down(self, touch):
         '''
-        Xử lý sự kiện khi người chơi click chuột phải (cắm/rút cờ).
+        Xử lý sự kiện khi người chơi nhấn chuột xuống.
+        Chuyên dùng để bắt sự kiện click chuột phải để thực hiện thao tác cắm/rút cờ.
+        
+        Args:
+            touch (MotionEvent): Đối tượng chứa thông tin về thao tác chạm/click.
+            
+        Returns:
+            bool: Trả về True nếu sự kiện đã được xử lý (ngăn Kivy lan truyền sự kiện), 
+            ngược lại gọi hàm gốc của lớp cha.
         '''
         if self.collide_point(touch.x, touch.y):
             if 'button' in touch.profile and touch.button == 'right':
@@ -512,8 +623,12 @@ class CellUI(Button):
 
     def on_release(self):
         '''
-        Xử lý sự kiện khi người chơi click chuột trái.
-        Gửi yêu cầu mở ô về cho ứng dụng gốc nếu ô chưa bị cắm cờ.
+        Xử lý sự kiện khi người chơi nhả chuột/ngón tay (tương đương click chuột trái).
+        - Nếu ô chưa mở: Gửi yêu cầu mở ô.
+        - Nếu ô đã mở và có số lân cận > 0: Gọi tính năng Chord (mở nhanh xung quanh).
+        
+        Returns:
+            None.
         '''
         if self.logic_cell.isFlagged:
             return
@@ -526,8 +641,11 @@ class CellUI(Button):
 
     def update_display(self):
         '''
-        Đồng bộ giao diện của nút bấm dựa trên trạng thái hiện tại của logic_cell.
-        Đổi màu nền đỏ nếu có mìn, hiện số nếu an toàn, hoặc hiện chữ 'F' nếu cắm cờ.
+        Đồng bộ giao diện đồ họa của nút bấm để phản ánh đúng trạng thái logic.
+        Cập nhật màu nền, hiển thị số lân cận hoặc load hình ảnh (mìn/cá) tương ứng.
+        
+        Returns:
+            None. Thay đổi trực tiếp các thuộc tính hiển thị của nút.
         '''
         self.text = ""
         self.icon_color.rgba = [1, 1, 1, 0] 
@@ -554,7 +672,12 @@ class CellUI(Button):
 
 class RoundedSpinnerOption(SpinnerOption):
     '''
-    Lớp này dùng để bo góc cho các lựa chọn NẰM BÊN TRONG danh sách xổ xuống.
+    Lớp giao diện đại diện cho từng lựa chọn thả xuống bên trong Menu Spinner.
+    Được tùy chỉnh Canvas để có các viền bo tròn mềm mại thay vì hình chữ nhật sắc cạnh.
+    
+    Attributes:
+        bg_color (Color): Màu nền của lựa chọn.
+        bg_rect (RoundedRectangle): Hình khối bo góc hiển thị trên Canvas.
     '''
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -578,9 +701,20 @@ class RoundedSpinnerOption(SpinnerOption):
 
 class RoundedSpinner(Spinner):
     '''
-    Lớp này dùng để bo góc cho CÁI NÚT SPINNER CHÍNH hiển thị trên màn hình.
+    Lớp giao diện tùy chỉnh cho Menu Thả xuống (Dropdown/Spinner) chính.
+    Được thiết kế để đồng nhất ngôn ngữ thiết kế bo góc với các nút bấm khác trong game.
+    
+    Attributes:
+        custom_color (list/tuple): Màu sắc tùy chọn cho nút Spinner truyền vào dưới dạng RGBA.
     '''
     def __init__(self, **kwargs):
+        '''
+        Khởi tạo Spinner chính với màu sắc được cung cấp hoặc màu mặc định.
+        
+        Args:
+            custom_color (list, optional): Mã màu RGBA. Mặc định là #C9903BFF.
+            **kwargs: Các tham số thuộc tính gốc của Kivy Spinner.
+        '''
         self.custom_color = kwargs.pop('custom_color', get_color_from_hex("#C9903BFF"))
         super().__init__(**kwargs)
         
@@ -597,15 +731,26 @@ class RoundedSpinner(Spinner):
         self.bind(pos=self.update_rect, size=self.update_rect)
 
     def update_rect(self, *args):
+        '''Cập nhật động kích thước hình học dựa vào giao diện khung ứng dụng.'''
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
 
 class RoundedButton(Button):
     '''
-    Lớp nút bấm tùy chỉnh để có viền bo góc.
-    Hỗ trợ truyền màu sắc tùy ý qua tham số `custom_color`.
+    Lớp giao diện đại diện cho một nút bấm tương tác cơ bản nhưng được tùy chỉnh viền bo tròn.
+    Hỗ trợ thay đổi màu sắc linh hoạt thông qua tham số khởi tạo.
+    
+    Attributes:
+        custom_color (list/tuple): Màu sắc nền của nút bấm dưới dạng mảng RGBA.
     '''
     def __init__(self, **kwargs):
+        '''
+        Khởi tạo nút bấm bo góc.
+        
+        Args:
+            custom_color (list, optional): Mã màu nền RGBA. Mặc định là [1, 0.6, 0.8, 1].
+            **kwargs: Các tham số thuộc tính gốc của Kivy Button.
+        '''
         self.custom_color = kwargs.pop('custom_color', [1, 0.6, 0.8, 1])
         super().__init__(**kwargs)
         
@@ -620,20 +765,30 @@ class RoundedButton(Button):
         self.bind(pos=self.update_rect, size=self.update_rect)
 
     def update_rect(self, *args):
+        '''Cập nhật động kích thước hình học dựa vào giao diện khung ứng dụng.'''
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
 
-class MinesweeperApp(App):
+class MeowsweeperApp(App):
     '''
     Lớp ứng dụng cốt lõi (Controller). Quản lý vòng đời trò chơi, 
-    khởi tạo giao diện và xử lý tương tác tổng thể.
+    khởi tạo giao diện (View), xử lý tương tác tổng thể và liên kết với Logic (Model).
+    
+    Attributes:
+        sm (ScreenManager): Bộ quản lý chuyển đổi giữa các màn hình (Start, Game).
+        game_board (Board): Đối tượng chứa logic của bàn cờ.
+        ai (MinesweeperAI): Đối tượng Trí tuệ nhân tạo dùng để gợi ý nước đi.
+        ui_grid (list): Mảng 2 chiều chứa các đối tượng CellUI (nút bấm giao diện).
+        time_elapsed (int): Thời gian đã trôi qua tính bằng giây.
+        timer_event (ClockEvent): Đối tượng quản lý sự kiện lặp bộ đếm thời gian.
+        hints_left (int): Số lượt sử dụng gợi ý còn lại.
     '''
     def build(self):
         '''
-        Khởi tạo hệ thống giao diện và kết nối các phần tử UI với Logic.
+        Khởi tạo hệ thống giao diện, thiết lập các màn hình và kết nối các phần tử UI với Logic.
         
         Returns:
-            BoxLayout: Trả về khung bố cục gốc (chứa nhãn mạng sống và lưới game).
+            ScreenManager: Trả về bộ quản lý màn hình gốc chứa toàn bộ giao diện ứng dụng.
         '''
         self.sm = ScreenManager()
         
@@ -725,7 +880,7 @@ class MinesweeperApp(App):
 
         main_layout.add_widget(top_bar)
 
-        self.hint_message = Label(text="Sẵn sàng! Chúc bạn may mắn", font_size=18, color=[0, 0, 0, 1], size_hint=(1, 0.05), bold=True)
+        self.hint_message = Label(text="", font_size=18, color=[0, 0, 0, 1], size_hint=(1, 0.05), bold=True)
         main_layout.add_widget(self.hint_message)
 
         board_anchor = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(1, 0.85))
@@ -746,10 +901,19 @@ class MinesweeperApp(App):
         return self.sm
 
     def go_to_game(self, instance):
-        '''Hàm để chuyển từ màn hình Start sang màn hình Game'''
+        '''
+        Hàm callback chuyển từ màn hình Start sang màn hình Game.
+        
+        Args:
+            instance (Button): Nút bấm phát sinh sự kiện.
+        '''
         self.sm.current = 'game'
 
     def create_grid_ui(self):
+        '''
+        Tạo mới hoặc vẽ lại toàn bộ lưới giao diện bàn cờ. 
+        Được gọi khi bắt đầu ứng dụng hoặc khi chọn chơi lại/đổi độ khó.
+        '''
         self.board_layout.clear_widgets()
         self.ui_grid = []
         
@@ -769,12 +933,22 @@ class MinesweeperApp(App):
             self.ui_grid.append(ui_row)
 
     def update_lives_ui(self):
+        '''
+        Cập nhật hiển thị số lượng trái tim (mạng sống) trên thanh công cụ.
+        '''
         self.lives_layout.clear_widgets()
         for _ in range(self.game_board.lives):
             heart = Image(source='image/heart.png', allow_stretch=True) 
             self.lives_layout.add_widget(heart)
 
     def on_menu_select(self, spinner, text):
+        '''
+        Xử lý sự kiện khi người dùng chọn một mục trong menu thả xuống (Cài đặt).
+        
+        Args:
+            spinner (Spinner): Đối tượng menu thả xuống.
+            text (str): Giá trị mà người dùng vừa chọn.
+        '''
         if text == 'Dễ':
             self.reset_game(6, 12, 10)
         elif text == 'Vừa':
@@ -787,6 +961,14 @@ class MinesweeperApp(App):
         spinner.text = 'Cài đặt'
 
     def reset_game(self, rows, cols, mines):
+        '''
+        Khởi tạo lại toàn bộ trạng thái logic và giao diện của trò chơi.
+        
+        Args:
+            rows (int): Số hàng mới.
+            cols (int): Số cột mới.
+            mines (int): Tổng số mìn mới.
+        '''
         self.game_rows = rows
         self.game_cols = cols
         self.num_mines = mines
@@ -801,7 +983,7 @@ class MinesweeperApp(App):
         self.create_grid_ui()
 
         self.update_lives_ui()
-        self.hint_message.text = "Game mới đã sẵn sàng!"
+        self.hint_message.text = ""
         self.hint_message.color = [0, 0, 0, 1]
         
         self.time_elapsed = 0
@@ -815,6 +997,13 @@ class MinesweeperApp(App):
         self.sync_ui_with_logic()
 
     def give_hint(self, instance):
+        '''
+        Thu thập dữ liệu từ bàn cờ, cung cấp cho bộ não AI để suy luận 
+        và hiển thị nước đi gợi ý tiếp theo lên giao diện.
+        
+        Args:
+            instance (Button): Nút bấm Gợi ý.
+        '''
         if self.game_board.game_over:
             return
 
@@ -844,7 +1033,7 @@ class MinesweeperApp(App):
         action, coords = self.ai.get_hint(self.game_board)
         
         if action == "none":
-            self.hint_message.text = "AI bó tay! Vẫn giữ nguyên lượt gợi ý cho bạn."
+            self.hint_message.text = "Meo Meo không biết cách giải, giữ nguyên lượt gợi ý cho bạn."
             self.hint_message.font_name = "font/body.ttf"
             self.hint_message.color = [0, 0, 0, 1]
             return 
@@ -874,6 +1063,14 @@ class MinesweeperApp(App):
             self.hint_message.font_name = "font/body.ttf"
 
     def handle_chord(self, r, c):
+        '''
+        Thực hiện tính năng mở nhanh (Chording) khi người dùng click vào ô đã có số.
+        Nếu số cờ lân cận bằng với số trên ô, tự động mở tất cả các ô xung quanh.
+        
+        Args:
+            r (int): Tọa độ hàng.
+            c (int): Tọa độ cột.
+        '''
         if self.game_board.game_over:
             return
             
@@ -884,7 +1081,7 @@ class MinesweeperApp(App):
     
     def handle_click(self, r, c):
         '''
-        Hàm trung gian nhận yêu cầu click từ CellUI và ra lệnh cho Board xử lý.
+        Hàm trung gian nhận yêu cầu mở ô từ CellUI và ra lệnh cho Board xử lý.
         Đảm bảo rải mìn an toàn ở click đầu tiên và kích hoạt kiểm tra Thắng/Thua.
         
         Args:
@@ -907,6 +1104,12 @@ class MinesweeperApp(App):
         self.sync_ui_with_logic()
 
     def update_timer(self, dt):
+        '''
+        Hàm callback được gọi mỗi giây bởi Kivy Clock để cập nhật bộ đếm thời gian.
+        
+        Args:
+            dt (float): Delta time (Khoảng thời gian trôi qua giữa 2 lần gọi hàm).
+        '''
         if self.game_board.game_over:
             self.timer_event.cancel()
             return
@@ -917,8 +1120,8 @@ class MinesweeperApp(App):
     def sync_ui_with_logic(self):
         '''
         Đồng bộ toàn bộ giao diện (View) để phản ánh trạng thái mới nhất của Bộ não (Model).
-        Cập nhật Label thông báo chiến thắng/thua cuộc hoặc số mạng hiện tại, 
-        và làm mới màu sắc của tất cả nút bấm.
+        Cập nhật số mạng sống hiện tại, làm mới màu sắc/ảnh của tất cả nút bấm, 
+        và gọi hiển thị thông báo popup nếu game đã kết thúc.
         '''
         self.update_lives_ui()
 
@@ -931,8 +1134,8 @@ class MinesweeperApp(App):
 
     def update_board_size(self, *args):
         '''
-        Tự động tính toán lại kích thước để ép lưới (Grid) hiển thị 
-        dưới dạng hình vuông hoàn hảo dựa trên sự thay đổi màn hình thiết bị.
+        Tự động tính toán lại kích thước hiển thị của lưới (Grid) 
+        khi cửa sổ thiết bị thay đổi kích thước, đảm bảo các ô luôn là hình vuông hoàn hảo.
         '''
         available_width = Window.width * 0.95
         available_height = Window.height * 0.75 
@@ -952,7 +1155,13 @@ class MinesweeperApp(App):
         self.board_layout.size = (board_width, board_height)
 
     def show_endgame_popup(self, is_win):
-        '''Tạo và hiển thị cửa sổ nổi kết thúc game: Nền trắng trong suốt, giới hạn kích thước'''
+        '''
+        Tạo và hiển thị cửa sổ nổi (Popup) khi trò chơi kết thúc.
+        Cung cấp thông báo động dựa trên kết quả Thắng/Thua và thời gian hoàn thành.
+        
+        Args:
+            is_win (bool): True nếu người chơi chiến thắng, False nếu thua cạn mạng.
+        '''
         if self.is_popup_open:
             return
         self.is_popup_open = True
@@ -962,7 +1171,7 @@ class MinesweeperApp(App):
         
         content = BoxLayout(orientation='vertical', padding=20, spacing=20)
         
-        msg = "Bạn đã bảo vệ được số cá!" if is_win else f"   Cá của bạn đã bị\nchú mèo khác ăn hết..."
+        msg = "Bạn đã bảo vệ được số cá!" if is_win else f"Cá của Meo Meo bị ăn hết rồi..."
         color = [0.2, 0.7, 0.2, 1] if is_win else [0.9, 0.2, 0.2, 1]
         
         lbl = Label(
@@ -1012,9 +1221,15 @@ class MinesweeperApp(App):
         self.endgame_popup.open()
 
     def restart_from_popup(self, instance):
-        '''Xử lý khi người chơi bấm nút Chơi lại trên Popup'''
+        '''
+        Xử lý sự kiện khi người chơi bấm nút "Chơi lại" trên Popup kết thúc game.
+        Tắt Popup và gọi hàm khởi tạo màn chơi mới.
+        
+        Args:
+            instance (Button): Nút bấm phát sinh sự kiện.
+        '''
         self.endgame_popup.dismiss() 
         self.reset_game(self.game_rows, self.game_cols, self.num_mines) 
 
 if __name__ == '__main__':
-    MinesweeperApp().run()
+    MeowsweeperApp().run()
